@@ -63,7 +63,7 @@ exports.signup = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        const newCompany = new Company({
+        const company = new Company({
             name,
             email,
             phone,
@@ -71,18 +71,18 @@ exports.signup = async (req, res) => {
             employeeSize,
         });
 
-        await newCompany.save();
+        await company.save();
 
-        const token = jwt.sign({ companyId: newCompany._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ companyId: company._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
         res.status(201).json({
             message: 'Company registered successfully.',
             company: {
-                id: newCompany?._id,
-                name: newCompany?.name,
-                email: newCompany?.email,
-                phone: newCompany?.phone,
-                employeeSize: newCompany?.employeeSize,
+                id: company?._id,
+                name: company?.name,
+                email: company?.email,
+                phone: company?.phone,
+                employeeSize: company?.employeeSize,
             },
             token,
         });
