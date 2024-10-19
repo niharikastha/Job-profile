@@ -1,9 +1,8 @@
 const Joi = require('joi');
-const bcrypt = require('bcrypt');
 const Company = require('../models/Company');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-// const twilio = require('twilio');
+const { sendOtp } = require('../controllers/emailController');
 
 const companyRegistrationSchema = Joi.object({
     name: Joi.string().min(4).max(50).required().messages({
@@ -15,6 +14,11 @@ const companyRegistrationSchema = Joi.object({
         'string.empty': 'Email is required',
         'string.email': 'Email must be a valid email address',
     }),
+    companyName: Joi.string().min(4).max(50).required().messages({
+        'string.empty': 'Company name is required',
+        'string.min': 'Company name should have at least 4 characters',
+        'string.max': 'Company name should not exceed 50 characters',
+    }),
     phone: Joi.string()
     .pattern(/^[6-9]\d{9}$/)
     .required()
@@ -22,15 +26,6 @@ const companyRegistrationSchema = Joi.object({
         'string.empty': 'Phone number is required',
         'string.pattern.base': 'Phone number must be a valid 10-digit Indian number starting with 6, 7, 8, or 9',
     }),
-    password: Joi.string()
-        .min(8)
-        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]/)
-        .required()
-        .messages({
-            'string.empty': 'Password is required',
-            'string.min': 'Password should have at least 8 characters',
-            'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number',
-        }),
     employeeSize: Joi.number().integer().min(1).max(10000).required().messages({
         'number.base': 'Employee size must be a number',
         'number.min': 'Employee size must be at least 1',
@@ -46,7 +41,8 @@ const loginValidationSchema = Joi.object({
 });
 
 exports.signup = async (req, res) => {
-    const { name, email, phone, password, employeeSize } = req.body;
+    
+    const { name, email, phone, companyName, employeeSize } = req.body;
 
     const { error } = companyRegistrationSchema.validate(req.body, { abortEarly: false });
     if (error) {
@@ -57,17 +53,14 @@ exports.signup = async (req, res) => {
     try {
         const existingCompany = await Company.findOne({ email });
         if (existingCompany) {
-            return res.status(400).json({ message: 'THis email already exists.' });
+            return res.status(400).json({ message: 'This email   exists.' });
         }
-
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
 
         const company = new Company({
             name,
             email,
             phone,
-            password: hashedPassword,
+            companyName,
             employeeSize,
         });
 
@@ -83,16 +76,17 @@ exports.signup = async (req, res) => {
                 email: company?.email,
                 phone: company?.phone,
                 employeeSize: company?.employeeSize,
+                companyName: company?.companyName,
             },
             token,
         });
-        } catch (error) {
+    } catch (error) {
         res.status(500).json({ message: 'Server error during registration', error });
     }
 };
 
 exports.login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email } = req.body;
 
     const { error } = loginValidationSchema.validate({ email }, { abortEarly: false });
     if (error) {
@@ -106,12 +100,16 @@ exports.login = async (req, res) => {
             return res.status(404).json({ message: 'Company not found' });
         }
 
-        const isMatch = await bcrypt.compare(password, company?.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Incorrect password' });
+        req.user = { companyId: company._id };
+        req.body.medium = 'email'; 
+
+        const otpResponse = await sendOtp(req); 
+
+        if (otpResponse.status !== 200) {
+            return res.status(otpResponse.status).json({ message: otpResponse.message, error: otpResponse.error });
         }
 
-        const token = jwt.sign({ companyId: company?._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = jwt.sign({ companyId: company?._id }, process.env.JWT_SECRET, { expiresIn: '24h' });
 
         res.status(200).json({ token, companyId: company?._id });
     } catch (error) {
@@ -120,3 +118,21 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.logout = async (req, res) => {
+    const companyId = req.user.companyId; 
+    
+    try {
+        const company = await Company.findById(companyId);
+        if (!company) {
+            return res.status(404).json({ message: 'Company not found' });
+        }
+
+        company.isEmailVerified = false;
+        await company.save();
+
+        res.status(200).json({ message: 'Logout successful.' });
+    } catch (error) {
+        console.log('Error during logout:', error);
+        res.status(500).json({ message: 'Server error during logout', error: error.message });
+    }
+};

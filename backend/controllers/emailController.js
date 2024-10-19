@@ -1,9 +1,6 @@
 const nodemailer = require('nodemailer');
 const mongoose = require('mongoose');
-const axios = require('axios');
 const TeleSignSDK = require('telesignsdk');
-
-const EmailLog = require('../models/EmailLog');
 const Company = require('../models/Company'); 
 
 const customerId = process.env.CUSTOMER_ID ;
@@ -22,32 +19,44 @@ const sendOtpEmail = async (email, otp) => {
     const mailOptions = {
         from: process.env.EMAIL_USER,          
         to: email,                              
-        subject: 'Your OTP Code',               
-        html: `<p>Your OTP is: <strong>${otp}</strong>. It is valid for 1 hour.</p>`, 
+        subject: 'OTP for Cuvette',               
+        html: `<p>Your One Time Password(OTP) for login is: <strong>${otp}</strong>. Please note that the OTP is valid for 1 hour. Please do not share this with anyone.</p>
+                <p>Regards</p>
+                <p>Cuvette team</p>`, 
     };
 
     try {
         await transporter.sendMail(mailOptions);
         console.log('OTP sent successfully');
+        return;
     } catch (error) {
         console.error('Error sending OTP:', error);
         throw new Error('Could not send OTP email');
     }
 };
-
+// OTP sent successfully
 const sendOtpToPhone = (phoneNumber, otp) => {
     const message = `Your OTP code is ${otp}`;
     const messageType = 'OTP';
 
-    teleSignClient.sms.message((error, responseBody) => {
-        if (error) {
-            throw new Error('Could not send OTP to phone');
-        }
-    }, phoneNumber, message, messageType);
+    try {
+        teleSignClient.sms.message((error, responseBody) => {
+            if (error) {
+                throw new Error('Could not send OTP to phone');
+            }
+            console.log('OTP sent successfully via phone');
+        }, phoneNumber, message, messageType);
+        return;
+    } catch (error) {
+        console.error('Error sending OTP:', error);
+        throw new Error('Could not send OTP phone');
+    }
+   
 };
 
 exports.sendOtp = async (req, res) => {
     const { medium } = req.body; 
+    console.log("🚀 ~ exports.sendOtp= ~ medium:", medium)
 
     try {
         const companyId = req.user?.companyId;
@@ -71,22 +80,23 @@ exports.sendOtp = async (req, res) => {
 
             const formattedPhoneNumber = company?.phone.startsWith("+91") ? company.phone : `+91${company.phone}`;
 
-            sendOtpToPhone(formattedPhoneNumber, otp); 
+            console.log("🚀 ~ exports.sendOtp= ~ formattedPhoneNumber:", formattedPhoneNumber)
+            await sendOtpToPhone(formattedPhoneNumber, otp); 
         } else {
             return res.status(400).json({ message: 'Either email or phone must be provided' });
         }
 
         await company.save();
-
-        res.status(200).json({ message: 'OTP sent to email' });
+        return res.status(200).json({ status: 'success', message: 'OTP sent successfully' });
+        
     } catch (error) {
         if (error?.name === 'JsonWebTokenError') {
-            return res.status(401).json({ message: 'Invalid token' });
+            return res.status(401).json({ status: 'error', message: 'Invalid token' });
         }
         if (error instanceof mongoose.Error) {
-            return res.status(400).json({ message: 'Database error', error: error?.message });
+            return res.status(400).json({ status: 'error', message: 'Database error', error: error?.message });
         }
-        res.status(500).json({ message: 'Server error', error: error.message }); 
+        return res.status(500).json({ status: 'error', message: 'Server error', error: error.message }); 
     }
 };
 
