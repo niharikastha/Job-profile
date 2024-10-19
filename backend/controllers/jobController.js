@@ -57,10 +57,19 @@ const sendEmailsToCandidates = async (candidates, job) => {
         const mailOptions = {
             from: process.env.EMAIL_USER,
             to: candidate.email,
-            subject: 'Job Application Invitation',
-            html: `<p>Dear Candidate,</p><p>You have been invited to apply for a new job opportunity. Please visit our website for more details.</p>`,
+            subject: `Invitation to Apply for ${job.title} Position`,
+            html: `
+                <p>Dear ${candidate.email},</p>
+                <p>We are pleased to invite you to apply for the following job opportunity:</p>
+                <h2>${job.title}</h2>
+                <p><strong>Description:</strong> ${job.description}</p>
+                <p><strong>Experience Level Required:</strong> ${job.experienceLevel}</p>
+                <p><strong>Application Deadline:</strong> ${new Date(job.endDate).toLocaleDateString()}</p>
+                <p>To apply or get more details, please visit our website.</p>
+                <p>We look forward to receiving your application!</p>
+                <p>Best regards,<br/>The Recruitment Team</p>
+            `,
         };
-
         let emailStatus = 'success';
 
         try {
